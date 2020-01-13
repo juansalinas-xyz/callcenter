@@ -8,8 +8,8 @@ import org.slf4j.LoggerFactory;
 /**
  * 
  * @author Juan M. Salinas
- *
- * Modela a un empleado
+ * 
+ * Modela a un empleado. 
  *
  */
 public class Employee implements Runnable{
@@ -77,25 +77,19 @@ public class Employee implements Runnable{
 	
 	@Override
 	public void run() {
+		logger.info("Thread Employee : " + Thread.currentThread().getName() + " empezando ");
 		while(!this.callsQueue.isEmpty()){
+			logger.info("Cantidad de llamadas : " + this.callsQueue.size());	
 			Call call = this.callsQueue.poll();
-			this.attend(call);
+			this.setBusy();
+			logger.info("-> "+ "Thread Employee : " + Thread.currentThread().getName() + " (Ocupado) atiende llamada de ( "+ call.getDurationInSeconds()+" ) segundos, " + "Cantidad de llamadas restantes : " + this.callsQueue.size());
+			try {
+				TimeUnit.SECONDS.sleep(call.getDurationInSeconds());
+				this.setAvailable();
+				logger.info("-> " + Thread.currentThread().getName()  + " disponible ");
+			} catch (InterruptedException e) {
+				logger.error(e.getMessage());
+			}
 		}		
-	}	
-	
-	/**
-	 * Metodo mediante el cual el empleado atiende la llamada.
-	 * @param call
-	 */
-	private synchronized void attend(Call call) {
-		this.setBusy();
-		try {
-			logger.info("-> " + this.name + " ocupado ");
-			TimeUnit.SECONDS.sleep(call.getDurationInSeconds());
-			this.setAvailable();
-			logger.info("-> " + this.name + " disponible ");
-		} catch (InterruptedException e) {
-			logger.error(e.getMessage());
-		}
 	}
 }

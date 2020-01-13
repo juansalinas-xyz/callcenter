@@ -1,7 +1,6 @@
 package com.salinas.matias.juan.entity;
 
 import java.io.InputStream;
-import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -9,7 +8,6 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.Map.Entry;
 import java.util.concurrent.ConcurrentLinkedQueue;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.stream.Collectors;
@@ -22,27 +20,26 @@ import com.salinas.matias.juan.Constants;
  * 
  * @author Juan M. Salinas
  * 
- * Modela al objeto manager de llamadas que recibe el Call Center. 
+ * Modela al objeto manager de llamadas. 
  * 
  *
  */
 public class Dispatcher implements Runnable{
 
-	
 	private static final Logger logger = LoggerFactory.getLogger(Dispatcher.class);
 	
 	private static final Integer MAX_CALLS = 10;
 	private Map<Integer, String> attendOrder;
-	private CopyOnWriteArrayList<Employee> employeesList; 
+	private List<Employee> employeesList; 
 	private ConcurrentLinkedQueue<Call> callsQueue;
 	private ExecutorService executorService;
 	
 	/**
 	 * Construye el Dispatcher 
-	 * @param employeesList: Lista de empleados CopyOnWriteArrayList (thread-safe)
+	 * @param employeesList: Lista de empleados.
 	 */
-	public Dispatcher(CopyOnWriteArrayList<Employee> employeesList) {
-		this.employeesList = employeesList;
+	public Dispatcher(List<Employee> employeesList) {
+		this.employeesList = Collections.synchronizedList(employeesList);
 		this.callsQueue = new ConcurrentLinkedQueue<Call>();
 		this.executorService = Executors.newFixedThreadPool(MAX_CALLS);
 		this.setAttentionInstances();
@@ -60,13 +57,29 @@ public class Dispatcher implements Runnable{
 	
 	@Override
 	public void run() {
+		logger.info("Thread - Dispatcher : " + Thread.currentThread().getName() + " empezando ");
 		while(!this.callsQueue.isEmpty()) {
 			Call call = this.callsQueue.poll();
 			this.dispatchCall(call);
+			logger.info("-> " + Thread.currentThread().getName() + " dispatchCall: ( " + call.getDurationInSeconds() + " ) segundos ");
 		}
-		this.processCalls();
+		this.executorService.shutdown();
+        while (!this.executorService.isTerminated()){ } 
 	}
 	
+	/**
+	 * Asigna llamadas a los empleados y van atendiendo.
+	 * @param call
+	 */
+	private synchronized void dispatchCall(Call call) {
+		Optional<Employee> optionalEmployee = this.findAvailableEmployee();
+		if(optionalEmployee.isPresent()) {
+			Employee employee = optionalEmployee.get();
+			employee.addCall(call);
+			this.executorService.execute(employee);
+		}
+	}
+		
 	/**
 	 * Agrega una llamada a la cola de espera para ser atendida.
 	 * @param call
@@ -75,55 +88,63 @@ public class Dispatcher implements Runnable{
 		this.callsQueue.add(call);
 	}
 	
-	/**
-	 * Asigna llamadas a los empleados.
-	 * @param call
-	 */
-	private synchronized void dispatchCall(Call call) {
-		Optional<Employee> optionalEmployee = this.find(this.employeesList);
-		if(optionalEmployee.isPresent()) {
-			Employee employee = optionalEmployee.get();
-			employee.addCall(call);
-		}
-	}
-	
-	/**
-	 * Los empleados procesan sus respectivas llamadas asignadas.
-	 */
-	private void processCalls() {
-		for(Employee employee : this.employeesList) {
-			this.executorService.execute(employee);
-		}	
-	}
 	
 	/** Busca un empleado disponible para atender la llamada: 
 	 *  - En primer instancia debe ser atendida por un Operador. Si hay alguno disponible retorna  Optional<Employee> Operador. 
 	 *  - Si todos los operadores se encuentran ocupados y hay algun supervisor disponible retorna  Optional<Employee> Supervisor. 
 	 *  - Si todos los supervisores se encuentran ocupados y hay algun supervisor disponible retorna  Optional<Employee> Director.
 	 *  - Si todos se encuentran ocupados retorna un Optional<Employee> vacio. 
+	 *  
 	 * @param employees
 	 * @return Optional<Employee>
 	 */	
-	public Optional<Employee> find(Collection<Employee> employees) {
-
-		Optional<Employee> optionalEmployee = Optional.empty(); 
-		List<Employee> availableEmployeeList = employees.stream().filter(e -> e.isAvailable()).collect(Collectors.toList());
-
-		logger.info("Cantidad availableEmployeeList: " + availableEmployeeList.size());
-
+	public Optional<Employee> findAvailableEmployee() {
+		
+		Optional<Employee> optionalEmployee = Optional.empty();
+		List<Employee> availableEmployeeList = this.employeesList.stream().filter(e -> e.isAvailable()).collect(Collectors.toList());
+		
 		for (Entry<Integer, String> entry : this.attendOrder.entrySet()) {
-			
-			logger.info("Orden : " + entry.getKey() + ": " + entry.getValue());
 			EmployeeCategory category = EmployeeCategory.valueOf(entry.getValue());
-			
 			Optional<Employee> optEmployee = availableEmployeeList.stream().filter(e -> e.getCategory().equals(category)).findAny();
-
 			if(optEmployee.isPresent()){
-				logger.info(optEmployee.get().toString() + "  Libre ");
 				optionalEmployee = Optional.of(optEmployee.get());
 				break;
 			}
 		}
 		return optionalEmployee;
+	}
+
+	/* Getters an Setters */
+	
+	public List<Employee> getEmployeesList() {
+		return employeesList;
+	}
+
+	public void setEmployeesList(List<Employee> employeesList) {
+		this.employeesList = Collections.synchronizedList(employeesList);
+	}
+
+	public Map<Integer, String> getAttendOrder() {
+		return attendOrder;
+	}
+
+	public void setAttendOrder(Map<Integer, String> attendOrder) {
+		this.attendOrder = attendOrder;
+	}
+
+	public ConcurrentLinkedQueue<Call> getCallsQueue() {
+		return callsQueue;
+	}
+
+	public void setCallsQueue(ConcurrentLinkedQueue<Call> callsQueue) {
+		this.callsQueue = callsQueue;
+	}
+
+	public ExecutorService getExecutorService() {
+		return executorService;
+	}
+
+	public void setExecutorService(ExecutorService executorService) {
+		this.executorService = executorService;
 	}
 }
